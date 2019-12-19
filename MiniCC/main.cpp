@@ -573,6 +573,7 @@ struct RegexClassifier {
 			auto cls = state2cls.find(state);
 			if (cls != state2cls.cend()) {
 				cls_backup = cls->second;
+				str_backup = str;
 			}
 		}
 		return std::make_pair(cls_backup, str_backup);
