@@ -6,6 +6,7 @@
 #include <vector>
 #include <map>
 #include <unordered_map>
+#include <set>
 #include <unordered_set>
 #include <stack>
 #include <iterator>
@@ -18,8 +19,8 @@
 namespace regex { struct State; }
 
 namespace std {
-template <> struct hash<unordered_set<regex::State*>> {
-	size_t operator()(const unordered_set<regex::State*>& set) const;
+template <> struct hash<set<regex::State*>> {
+	size_t operator()(const set<regex::State*>& set) const;
 };
 }
 
@@ -143,7 +144,7 @@ struct DFA {
 };
 }
 
-size_t std::hash<std::unordered_set<regex::State*>>::operator()(const std::unordered_set<regex::State*>& set) const
+size_t std::hash<std::set<regex::State*>>::operator()(const std::set<regex::State*>& set) const
 {
 	std::hash<regex::State*> hash;
 	return std::accumulate(std::cbegin(set), std::end(set), size_t(), [&hash](size_t acc, auto x) {
@@ -154,14 +155,14 @@ size_t std::hash<std::unordered_set<regex::State*>>::operator()(const std::unord
 namespace regex {
 auto nfas2dfa(const std::vector<std::pair<NFA, unsigned>> &nfaclses)
 {
-	std::unordered_map<std::unordered_set<State *>, short> states;
-	std::stack<std::pair<std::unordered_set<State *>, short>> states_stack;
+	std::unordered_map<std::set<State*>, short> states;
+	std::stack<std::pair<std::set<State*>, short>> states_stack;
 	std::map<State *, unsigned> nfa_state2cls;
 	std::unordered_map<short, unsigned> dfa_state2cls;
 	DFA dfa;
 
-	auto move = [](const std::unordered_set<State *> &states, char ch) {
-		std::unordered_set<State *> res;
+	auto move = [](const std::set<State*>& states, char ch) {
+		std::set<State*> res;
 		for (auto &s : states) {
 			auto range = s->equal_range(ch);
 			for (auto it = range.first; it != range.second; ++it)
@@ -170,9 +171,9 @@ auto nfas2dfa(const std::vector<std::pair<NFA, unsigned>> &nfaclses)
 		return res;
 	};
 
-	auto closure = [](const std::unordered_set<State *> &ss) {
+	auto closure = [](const std::set<State*> &ss) {
 		std::stack<const State *> stack;
-		std::unordered_set<State *> res{std::begin(ss), std::end(ss)};
+		std::set<State*> res{std::begin(ss), std::end(ss)};
 
 		std::for_each(std::begin(ss), std::end(ss), [&stack](auto x) mutable { stack.push(x); });
 		while (!stack.empty()) {
@@ -188,7 +189,7 @@ auto nfas2dfa(const std::vector<std::pair<NFA, unsigned>> &nfaclses)
 	};
 
 	{
-		std::unordered_set<State *> start_states;
+		std::set<State*> start_states;
 		for (const auto &x : nfaclses) {
 			start_states.emplace(x.first.start_state);
 			nfa_state2cls.emplace(x.first.accepting_state, x.second);
