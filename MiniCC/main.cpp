@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <numeric>
 #include <functional>
+#include <type_traits>
 #include <assert.h>
 #include <iostream>
 
@@ -28,7 +29,7 @@ namespace regex {
 
 
 struct State : std::unordered_multimap<char, State*> {
-	State* add_edge(char sym, State* next) {
+	State* add_edge(char sym, State *next) {
 		return std::unordered_multimap<char, State*>::emplace(sym, next)->second;
 	}
 };
@@ -42,19 +43,19 @@ struct StateBuffer : std::vector<State> {
 };
 
 struct NFA {
-	State* start_state;
+	enum { EPS = '\0' };
+
+	State *start_state;
 	// NOTE(sergey): We assume that we create NFAs with a single accepting state.
-	State* accepting_state;
+	State *accepting_state;
 
-	NFA(StateBuffer& sb) : start_state(sb.create_state()), accepting_state(sb.create_state()) { }
+	NFA(StateBuffer &sb) : start_state(sb.create_state()), accepting_state(sb.create_state()) { }
 
-	NFA(State* s, State* a) : start_state(s), accepting_state(a) { }
+	NFA(State *s, State *a) : start_state(s), accepting_state(a) { }
 
-	NFA(StateBuffer& sb, char sym)
+	NFA(StateBuffer &sb, char sym)
+		: start_state(sb.create_state()), accepting_state(sb.create_state())
 	{
-		start_state = sb.create_state();
-		accepting_state = sb.create_state();
-
 		start_state->add_edge(sym, accepting_state);
 	}
 
@@ -63,64 +64,76 @@ struct NFA {
 		start_state->add_edge(sym, accepting_state);
 	}
 
-	void add_transitions(char* syms, unsigned n)
+	void add_transitions(char *syms, unsigned n)
 	{
 		for (unsigned i = 0; i < n; ++i)
 			start_state->add_edge(syms[i], accepting_state);
 	}
 
-	NFA union_with(StateBuffer& sb, NFA& other)
+	NFA invert(StateBuffer &sb)
+	{
+		NFA invertion(sb);
+
+		for (unsigned i = 0; i < CHAR_MAX + 1; ++i)
+			invertion.add_transition(i);
+		for (auto it = start_state->cbegin(); it != start_state->cend(); ++it)
+			invertion.start_state->erase(it->first);
+
+		return invertion;
+	}
+
+	NFA union_with(StateBuffer &sb, NFA &other)
 	{
 		auto start = sb.create_state();
 		auto accepting = sb.create_state();
 
-		start->add_edge('\0', start_state);
-		accepting_state->add_edge('\0', accepting);
-		start->add_edge('\0', other.start_state);
-		other.accepting_state->add_edge('\0', accepting);
+		start->add_edge(EPS, start_state);
+		accepting_state->add_edge(EPS, accepting);
+		start->add_edge(EPS, other.start_state);
+		other.accepting_state->add_edge(EPS, accepting);
 
 		return { start, accepting };
 	}
 
-	NFA cat_with(StateBuffer& sb, NFA& other)
+	NFA cat_with(StateBuffer &sb, NFA &other)
 	{
-		accepting_state->add_edge('\0', other.start_state);
+		accepting_state->add_edge(EPS, other.start_state);
 		return { start_state, other.accepting_state };
 	}
 
-	NFA optional(StateBuffer& sb)
+	NFA optional(StateBuffer &sb)
 	{
 		auto start = sb.create_state();
 		auto accepting = sb.create_state();
 
-		start->add_edge('\0', start_state);
-		accepting_state->add_edge('\0', accepting);
-		start->add_edge('\0', accepting);
+		start->add_edge(EPS, start_state);
+		accepting_state->add_edge(EPS, accepting);
+		start->add_edge(EPS, accepting);
 
 		return { start, accepting };
 	}
 
-	NFA plus(StateBuffer& sb)
+	NFA plus(StateBuffer &sb)
 	{
 		auto start = sb.create_state();
 		auto accepting = sb.create_state();
 
-		accepting_state->add_edge('\0', start_state);
-		start->add_edge('\0', start_state);
-		accepting_state->add_edge('\0', accepting);
+		accepting_state->add_edge(EPS, start_state);
+		start->add_edge(EPS, start_state);
+		accepting_state->add_edge(EPS, accepting);
 
 		return { start, accepting };
 	}
 
-	NFA star(StateBuffer& sb)
+	NFA star(StateBuffer &sb)
 	{
 		auto start = sb.create_state();
 		auto accepting = sb.create_state();
 
-		accepting_state->add_edge('\0', start_state);
-		start->add_edge('\0', start_state);
-		accepting_state->add_edge('\0', accepting);
-		start->add_edge('\0', accepting);
+		accepting_state->add_edge(EPS, start_state);
+		start->add_edge(EPS, start_state);
+		accepting_state->add_edge(EPS, accepting);
+		start->add_edge(EPS, accepting);
 
 		return { start, accepting };
 	}
@@ -144,7 +157,7 @@ struct DFA {
 };
 }
 
-size_t std::hash<std::set<regex::State*>>::operator()(const std::set<regex::State*>& set) const
+size_t std::hash<std::set<regex::State*>>::operator()(const std::set<regex::State*> &set) const
 {
 	std::hash<regex::State*> hash;
 	return std::accumulate(std::cbegin(set), std::end(set), size_t(), [&hash](size_t acc, auto x) {
@@ -157,13 +170,13 @@ auto nfas2dfa(const std::vector<std::pair<NFA, unsigned>> &nfaclses)
 {
 	std::unordered_map<std::set<State*>, short> states;
 	std::stack<std::pair<std::set<State*>, short>> states_stack;
-	std::map<State *, unsigned> nfa_state2cls;
+	std::map<State*, unsigned> nfa_state2cls;
 	std::unordered_map<short, unsigned> dfa_state2cls;
 	DFA dfa;
 
-	auto move = [](const std::set<State*>& states, char ch) {
+	auto move = [](const std::set<State*> &states, char ch) {
 		std::set<State*> res;
-		for (auto &s : states) {
+		for (auto& s : states) {
 			auto range = s->equal_range(ch);
 			for (auto it = range.first; it != range.second; ++it)
 				res.emplace(it->second);
@@ -172,7 +185,7 @@ auto nfas2dfa(const std::vector<std::pair<NFA, unsigned>> &nfaclses)
 	};
 
 	auto closure = [](const std::set<State*> &ss) {
-		std::stack<const State *> stack;
+		std::stack<const State*> stack;
 		std::set<State*> res{std::begin(ss), std::end(ss)};
 
 		std::for_each(std::begin(ss), std::end(ss), [&stack](auto x) mutable { stack.push(x); });
@@ -190,7 +203,7 @@ auto nfas2dfa(const std::vector<std::pair<NFA, unsigned>> &nfaclses)
 
 	{
 		std::set<State*> start_states;
-		for (const auto &x : nfaclses) {
+		for (const auto& x : nfaclses) {
 			start_states.emplace(x.first.start_state);
 			nfa_state2cls.emplace(x.first.accepting_state, x.second);
 		}
@@ -226,6 +239,48 @@ auto nfas2dfa(const std::vector<std::pair<NFA, unsigned>> &nfaclses)
 	return std::make_pair(dfa, dfa_state2cls);
 }
 
+#define FOR_CH(start, stop) \
+	for (int ch = (start); ch < (stop); ++ch)
+#define FOR_CH_IF(start, stop, pred) \
+	FOR_CH(start, stop) if (pred(ch))
+
+static void add_transitions_for_range(NFA &nfa, int start, int stop)
+{
+	FOR_CH(start, stop) nfa.add_transition(ch);
+}
+
+static void add_transitions_for_escaped(NFA &nfa, int sym)
+{
+	switch (sym) {
+	case '.': nfa.add_transition('.'); break;
+	case 'd': 
+		FOR_CH_IF(0, CHAR_MAX + 1, isdigit) nfa.add_transition(ch); 
+		break;
+	case 'D': 
+		FOR_CH_IF(0, CHAR_MAX + 1, !isdigit) nfa.add_transition(ch);
+		break;
+	case 's': 
+		FOR_CH_IF(0, CHAR_MAX + 1, isspace) nfa.add_transition(ch); 
+		break;
+	case 'S': 
+		FOR_CH_IF(0, CHAR_MAX + 1, !isspace) nfa.add_transition(ch); 
+		break;
+	case 'w': 
+		FOR_CH_IF(0, CHAR_MAX + 1, isalpha) nfa.add_transition(ch); 
+		nfa.add_transition('_');
+		break;
+	case 'W': 
+		FOR_CH_IF(0, '_', !isalpha) nfa.add_transition(ch); 
+		FOR_CH_IF('_' + 1, CHAR_MAX + 1, !isalpha) nfa.add_transition(ch);
+		break;
+	default: 
+		nfa.add_transition(sym); 
+		break;
+	}
+}
+
+#undef FOR_CH_IF
+#undef FOR_CH
 
 struct RegexClassifier {
 	static const unsigned ALPHABET_POWER = CHAR_MAX + 1;
@@ -233,23 +288,29 @@ struct RegexClassifier {
 	regex::DFA dfa;
 	std::unordered_map<short, unsigned> state2cls;
 
-	template <typename It>
-	RegexClassifier(It begin, It end)
+	template <typename RegexClsIt>
+	RegexClassifier(RegexClsIt begin, RegexClsIt end)
 	{
 		compile(begin, end);
 	}
 
-	template <typename It>
-	void compile(It begin, It end)
+	template <typename RegexClsIt>
+	void compile(RegexClsIt begin, RegexClsIt end)
 	{
+		static_assert(std::is_same<decltype(begin->first), const char*>::value 
+			&& std::is_same<decltype(begin->second), unsigned>::value);
+
 		StateBuffer state_buffer;
 		std::vector<std::pair<NFA, unsigned>> nfa4clses;
 
-		for (It it = begin; it != end; ++it)
+		for (auto it = begin; it != end; ++it)
 		{
-			auto regex_ptr = it->first;
-			auto cls = it->second;
+			const char *regex_ptr = it->first;
+			unsigned cls = it->second;
 
+			// --ALPHABET--
+			// |,*,+,?,(,),[,],^,-,\,.,other
+			//
 			// --RULES--
 			// OR -> OR '|' CAT
 			// OR -> CAT
@@ -261,40 +322,38 @@ struct RegexClassifier {
 			// ASTERIX -> SSET
 			// SSET -> '(' OR ')'
 			// SSET -> '[' SYMS ']'
+			// SSET -> '[' '^' SYMS ']'
 			// SSET -> SYM
-			// SYMS -> SYMS SYM
-			// SYMS -> SYM
-			// SYM -> '\' sym
-			// SYM -> sym
+			// SYMS -> {'\' sym | sym | sym '-' sym}*
+			// SYM -> {'\' sym | sym}
 
-			enum { SYM_STACK_BOTTOM = CHAR_MAX + 1, OR, CAT, ASTERIX, SSET, SYMS, SYM };
-			enum { PANIC, SHIFT, RECOGNIZE };
+			enum Nonterminal {SYM_STACK_BOTTOM = CHAR_MAX + 1, OR, CAT, ASTERIX, SSET, SYMS, SYM};
+			enum Action {PANIC, SHIFT, RECOGNIZE};
+			enum class Position {NORMAL, INSIDE_SSET, INSIDE_ESCAPED};
 
 			std::stack<NFA> nfa_stack;
 			std::stack<unsigned> sym_stack;
-			bool inside_brackets = false;
+			Position position = Position::NORMAL;
 
-			auto recognize = [&sym_stack, &nfa_stack, &state_buffer, &inside_brackets]() mutable {
+			auto recognize = [&sym_stack, &nfa_stack, &state_buffer, &position]() mutable {
 				unsigned m;
 			handle_state0:
-				m = sym_stack.top(); sym_stack.pop();
-				switch (m) {
-				case CAT: goto handle_state1;
-				case ASTERIX: goto handle_state3;
-				case '*': goto handle_state4;
-				case '+': goto handle_state5;
-				case '?': goto handle_state6;
-				case SSET: goto push_asterix;
-				case ')': goto handle_state7;
-				case ']': goto handle_state9;
-				case SYM: goto push_sset;
-				default:
-					sym_stack.push(m);
-					if (inside_brackets) {
-						goto handle_syms;
-					}
-					else {
-						goto handle_sym;
+				m = sym_stack.top();
+				switch (position) {
+				case Position::INSIDE_ESCAPED: goto handle_sym;
+				case Position::INSIDE_SSET: goto handle_syms;
+				case Position::NORMAL:
+					switch (m) {
+					case CAT: sym_stack.pop(); goto handle_state1;
+					case ASTERIX: sym_stack.pop(); goto handle_state3;
+					case '*': sym_stack.pop(); goto handle_state4;
+					case '+': sym_stack.pop(); goto handle_state5;
+					case '?': sym_stack.pop(); goto handle_state6;
+					case SSET: sym_stack.pop(); goto push_asterix;
+					case ')': sym_stack.pop(); goto handle_state7;
+					case ']': sym_stack.pop(); goto handle_state9;
+					case SYM: sym_stack.pop(); goto push_sset;
+					default: goto handle_sym;
 					}
 				}
 			handle_state1:
@@ -348,6 +407,12 @@ struct RegexClassifier {
 				m = sym_stack.top(); sym_stack.pop();
 				switch (m) {
 				case '[': goto push_sset;
+				case '^': goto handle_state11;
+				}
+			handle_state11:
+				m = sym_stack.top(); sym_stack.pop();
+				switch (m) {
+				case '[': goto handle_exclusive_sset;
 				}
 			handle_or: {
 				auto cat_nfa = nfa_stack.top(); nfa_stack.pop();
@@ -385,59 +450,52 @@ struct RegexClassifier {
 			push_asterix:
 				sym_stack.push(ASTERIX);
 				return;
+			handle_exclusive_sset: {
+				auto syms_nfa = nfa_stack.top(); nfa_stack.pop();
+				nfa_stack.push(syms_nfa.invert(state_buffer));
+				goto push_sset;
+			}
 			push_sset:
 				sym_stack.push(SSET);
 				return;
 			handle_syms: {
 				NFA nfa(state_buffer);
-				unsigned sym = sym_stack.top();
-				sym_stack.pop();
 
 				while (sym_stack.top() != '[') {
-#define FOR_CH(start, end) \
-	for (int ch = (start); ch < (end); ++ch)
-#define FOR_CH_IF(start, end, pred) \
-	FOR_CH(start, end) if (pred(ch))
-					switch (sym_stack.top()) {
-					case '-':
+					char sym = (char) sym_stack.top(); sym_stack.pop();
+					if (sym_stack.top() == '-') {
 						sym_stack.pop();
-						FOR_CH(sym_stack.top(), sym + 1) nfa.add_transition(ch);
-						sym = CHAR_MAX + 1;
-						break;
-					case '\\':
-						switch (sym) {
-						case '.': nfa.add_transition('.'); break;
-						case 'd': FOR_CH_IF(0, CHAR_MAX + 1, isdigit) nfa.add_transition(ch); break;
-						case 'D': FOR_CH_IF(0, CHAR_MAX + 1, !isdigit) nfa.add_transition(ch); break;
-						case 's': FOR_CH_IF(0, CHAR_MAX + 1, isspace) nfa.add_transition(ch); break;
-						case 'S': FOR_CH_IF(0, CHAR_MAX + 1, !isspace) nfa.add_transition(ch); break;
-						case 'w': FOR_CH_IF(0, CHAR_MAX + 1, isalpha) nfa.add_transition(ch); nfa.add_transition('_');  break;
-						case 'W': FOR_CH_IF(0, '_', !isalpha) nfa.add_transition(ch); FOR_CH_IF('_' + 1, CHAR_MAX + 1, !isalpha) nfa.add_transition(ch);  break;
-						}
-						sym = CHAR_MAX + 1;
-						break;
-					default:
-						if (sym < CHAR_MAX + 1) {
-							switch (sym) {
-							case '.': FOR_CH(0, CHAR_MAX) nfa.add_transition(ch); break;
-							default: nfa.add_transition(sym); break;
-							}
-						}
-						sym = sym_stack.top();
+						add_transitions_for_range(nfa, sym_stack.top(), sym+1);
+						sym_stack.pop();
 					}
-					sym_stack.pop();
-#undef FOR_CH_IF
-#undef FOR_CH
-			}
-			nfa_stack.push(nfa);
+					else if (sym_stack.top() == '\\') {
+						sym_stack.pop();
+						add_transitions_for_escaped(nfa, sym);
+					}
+					else {
+						nfa.add_transition(sym);
+					}
+				}
+				nfa_stack.push(nfa);
 				goto push_syms;
 			}
 			push_syms:
 				sym_stack.push(SYMS);
 				return;
 			handle_sym: {
-				nfa_stack.push({state_buffer, (char)sym_stack.top()});
-				sym_stack.pop();
+				NFA nfa(state_buffer);
+
+				char sym = (char) sym_stack.top(); sym_stack.pop();
+				if (sym_stack.top() == '\\') {
+					sym_stack.pop();
+					add_transitions_for_escaped(nfa, sym);
+				}
+				else if (sym == '.')
+					add_transitions_for_range(nfa, 0, CHAR_MAX+1);
+				else
+					nfa.add_transition(sym);
+
+				nfa_stack.push(nfa);
 				goto push_sym;
 			}
 			push_sym:
@@ -445,7 +503,7 @@ struct RegexClassifier {
 				return;
 			};
 
-			auto action = [&inside_brackets](unsigned m, char ch) {
+			auto action = [&position](unsigned m, char ch) {
 				switch (m) {
 				case SYM_STACK_BOTTOM:
 					switch (ch) {
@@ -478,6 +536,7 @@ struct RegexClassifier {
 				case SYMS:
 					switch (ch) {
 					case ']': return SHIFT;
+					default: return PANIC;
 					}
 					break;
 				case SYM:
@@ -485,43 +544,57 @@ struct RegexClassifier {
 					case '*': case '+': case '?': case '(': case '[': case '\\': default: case '|': case ')': case '\0': return RECOGNIZE;
 					}
 					break;
-				case '|':
+				}
+
+				switch (position) {
+				case Position::INSIDE_SSET:
 					switch (ch) {
-					case '(': case '[': case '\\': default: return SHIFT;
-					}
-					break;
-				case '*':
-				case '+':
-				case '?':
-					switch (ch) {
-					case '(': case '[': case '\\': default: case '|': case ')': case '\0': return RECOGNIZE;
-					}
-					break;
-				case '(':
-					switch (ch) {
-					case '(': case '[': case '\\': default: return SHIFT;
-					}
-					break;
-				case '[':
-					switch (ch) {
+					case ']': return RECOGNIZE;
 					default: return SHIFT;
 					}
-					break;
-				case ')':
-				case ']':
-					switch (ch) {
-					case '*': case '+': case '?': case '(': case '[': case '\\': default: case '|': case ')': case '\0': return RECOGNIZE;
+				case Position::INSIDE_ESCAPED:
+					switch (m) {
+					case '\\': return SHIFT;
+					default: return RECOGNIZE;
 					}
-					break;
-				case '\\':
-				default:
-					if (inside_brackets) {
+				case Position::NORMAL:
+					switch (m) {
+					case '|':
 						switch (ch) {
-						case ']': return RECOGNIZE;
+						case '(': case '[': case '\\': default: return SHIFT;
+						}
+						break;
+					case '*':
+					case '+':
+					case '?':
+						switch (ch) {
+						case '(': case '[': case '\\': default: case '|': case ')': case '\0': return RECOGNIZE;
+						}
+						break;
+					case '(':
+						switch (ch) {
+						case '(': case '[': case '\\': default: return SHIFT;
+						}
+						break;
+					case '[':
+						switch (ch) {
+						case '^': default: return SHIFT;
+						}
+						break;
+					case '^':
+						switch (ch) {
 						default: return SHIFT;
 						}
-					}
-					else {
+						break;
+					case ')':
+					case ']':
+						switch (ch) {
+						case '*': case '+': case '?': case '(': case '[': case '\\': default: case '|': case ')': case '\0': return RECOGNIZE;
+						}
+						break;
+					case '\\':
+						return SHIFT;
+					default:
 						return RECOGNIZE;
 					}
 				}
@@ -542,10 +615,22 @@ struct RegexClassifier {
 						goto next_regex;
 					}
 				}
-
-				switch (sym) {
-				case '[': inside_brackets = true; break;
-				case ']': inside_brackets = false; break;
+				
+				switch (position) {
+				case Position::NORMAL:
+					switch (sym_stack.top()) {
+					case  '\\': position = Position::INSIDE_ESCAPED; break;
+					case '[': position = Position::INSIDE_SSET; break;
+					}
+					break;
+				case Position::INSIDE_ESCAPED:
+					if (a == RECOGNIZE) position = Position::NORMAL;
+					break;
+				case Position::INSIDE_SSET:
+					switch (sym) {
+					case ']': position = Position::NORMAL; break;
+					}
+					break;
 				}
 			}
 		next_regex:;
