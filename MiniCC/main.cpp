@@ -351,10 +351,10 @@ repeat:
 	return token;
 }
 
-void unexpected_token_error(Context *ctx)
+void unexpected_token_error(Context &ctx)
 {
-	printf("<filename>:%d:%d: Unexpected token ", ctx->loc.line, ctx->loc.column);
-	print_token(ctx->current_token);
+	printf("<filename>:%d:%d: Unexpected token ", ctx.loc.line, ctx.loc.column);
+	print_token(ctx.current_token);
 	printf("\n");
 	exit(1);
 }
@@ -371,14 +371,14 @@ bool match_token(Context &ctx, unsigned expected_kind)
 	return ctx.current_token.kind == expected_kind;
 }
 
-bool expect_token(Context *ctx, unsigned expected_kind)
+bool expect_token(Context &ctx, unsigned expected_kind)
 {
 	if (match_token(ctx, expected_kind)) {
 		return true;
 	}
 	else {
 		printf("Unexpected token: ");
-		print_token(ctx->current_token);
+		print_token(ctx.current_token);
 		printf("\n");
 		return false;
 	}
