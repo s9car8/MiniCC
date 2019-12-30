@@ -1,9 +1,11 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <assert.h>
-#include <iostream>
+#include <variant>
+#include <memory>
 #include "regex.h"
 
 
-typedef enum TokenKind {
+enum TokenKind {
 	TOKEN_FIRST = CHAR_MAX + 1,
 	TOKEN_EOS = TOKEN_FIRST,
 
@@ -16,6 +18,7 @@ typedef enum TokenKind {
 	TOKEN_WHILE,
 	TOKEN_RETURN,
 
+	// Operations
 	TOKEN_PP, // ++
 	TOKEN_MM, // --
 	TOKEN_ARR, // ->
@@ -51,20 +54,16 @@ typedef enum TokenKind {
 	TOKEN_OTHER,
 
 	TOKEN_NUMBER,
-} TokenKind;
+};
 
 typedef struct Token {
 	unsigned kind; /* enum TokenKind || char-code */
 	const char *start, *end;
-	union {
-		int integer_val;
-		float float_val;
-		char char_val;
-		const char *str_val;
-	};
+	std::variant<int, float, char, std::string> val;
 } Token;
 
 typedef struct Location {
+	std::string filename;
 	size_t line, column;
 } Location;
 
@@ -74,7 +73,7 @@ typedef struct Context {
 	Location loc;
 } Context;
 
-static int scan_integer(const char *str, const char* end)
+static int scan_integer(const char *str, const char *end)
 {
 	static int char2digit[CHAR_MAX+1];
 	static bool inited;
@@ -132,9 +131,11 @@ static int scan_integer(const char *str, const char* end)
 	return sign * result;
 }
 
-static float scan_float(const char *str, const char* end)
+static float scan_float(const char *str, const char *end)
 {
-	return 0.f;
+	auto str_copy_ptr = std::make_unique<char>(str - end + 1);
+	strcpy(str_copy_ptr.get(), str);
+	return (float) atof(str_copy_ptr.get());
 }
 
 static inline char special_char(char ch)
@@ -154,42 +155,30 @@ static inline char special_char(char ch)
 	}
 }
 
-static char scan_char(const char *begin, const char* end)
+static char scan_char(const char *begin, const char *end)
 {
 	if (*begin != '\\')
 		return *begin;
 
-	return special_char(*begin);
+	return special_char(*++begin);
 }
 
-template <std::vector<char> &StrBuf>
-static const char* str_intern_range(const char* begin, const char* end)
+static std::string scan_string(const char *begin, const char *end)
 {
-	auto buf_start = StrBuf.data();
-	auto buf_end = StrBuf.data() + StrBuf.size();
-	auto str = std::search(buf_start, buf_end, begin, end);
+	std::string str;
 
-	if (str != buf_end) 
-		return str;
+	assert(end - begin >= 2);
+	// Remove quotes
+	++begin;
+	--end;
 
-	for (auto it = begin; it != end; ++it)
-		StrBuf.push_back(*it);
-	StrBuf.push_back('\0');
-	return buf_end;
-}
-
-std::vector<char> StringBuffer;
-
-static const char* create_str_from_range(const char *begin, const char *end)
-{
-	return str_intern_range<StringBuffer>(begin, end);
-}
-
-std::vector<char> IdentifierBuffer;
-
-static const char* create_id_from_range(const char *begin, const char *end)
-{
-	return str_intern_range<IdentifierBuffer>(begin, end);
+	while (begin != end) {
+		if (*begin != '\\')
+			str += *begin;
+		str += special_char(*++begin);
+		++begin;
+	}
+	return str;
 }
 
 void print_token(const Token &token)
@@ -247,18 +236,18 @@ void print_token(const Token &token)
 	}
 	switch (token.kind) {
 	case TOKEN_INTEGER:
-		printf(", %d>", token.integer_val);
+		printf(", %d>", std::get<int>(token.val));
 		break;
 	case TOKEN_STRING:
 	case TOKEN_IDENTIFIER:
-		printf(", %s>", token.str_val);
+		printf(", %s>", std::get<std::string>(token.val).c_str());
 		break;
 	default:
 		printf(">");
 	}
 }
 
-Token next_token(Context* ctx)
+Token next_token(Context &ctx)
 {
 	// SSYM1 = [ab\d]; SSYM2 = c
 	// ASTERIX = SSYM1 ? ; SSYM1 + ; SSYM1 *
@@ -316,41 +305,41 @@ Token next_token(Context* ctx)
 	static regex::RegexClassifier regex_classifier(
 		std::begin(regex2token_mapping), std::end(regex2token_mapping));
 
-	Token& token = ctx->current_token;
+	Token &token = ctx.current_token;
 
 repeat:
-	ctx->loc.column += token.end - token.start;
-	token.start = ctx->stream;
-	auto classification_res = regex_classifier.classify(ctx->stream);
-	auto cls = (*ctx->stream) ? classification_res.first : TOKEN_EOS;
+	ctx.loc.column += token.end - token.start;
+	token.start = ctx.stream;
+	auto classification_res = regex_classifier.classify(ctx.stream);
+	auto cls = (*ctx.stream) ? classification_res.first : TOKEN_EOS;
 	assert(cls >= 0);
 	token.kind = cls;
 	token.end = classification_res.second;
 
 	switch (token.kind) {
 	case TOKEN_INTEGER:
-		token.integer_val = scan_integer(token.start, token.end);
+		token.val.emplace<int>(scan_integer(token.start, token.end));
 		break;
 	case TOKEN_REAL:
-		token.float_val = scan_float(token.start, token.end);
+		token.val.emplace<float>(scan_float(token.start, token.end));
 		break;
 	case TOKEN_CHARACTER:
-		token.char_val = scan_char(token.start, token.end);
+		token.val.emplace<char>(scan_char(token.start, token.end));
 		break;
 	case TOKEN_STRING:
-		token.str_val = create_str_from_range(token.start, token.end);
+		token.val.emplace<std::string>(scan_string(token.start, token.end));
 		break;
 	case TOKEN_IDENTIFIER:
-		token.str_val = create_id_from_range(token.start, token.end);
+		token.val.emplace<std::string>(token.start, token.end);
 		break;
 	case TOKEN_WHITESPACE:
-		ctx->stream = token.end;
+		ctx.stream = token.end;
 		goto repeat;
 		break;
 	case TOKEN_NEWLINE:
-		ctx->loc.column = 0;
-		++ctx->loc.line;
-		ctx->stream = token.end;
+		ctx.loc.column = 0;
+		++ctx.loc.line;
+		ctx.stream = token.end;
 		goto repeat;
 		break;
 	case TOKEN_OTHER:
@@ -370,16 +359,16 @@ void unexpected_token_error(Context *ctx)
 	exit(1);
 }
 
-bool match_token(Context *ctx, unsigned expected_kind)
+bool match_token(Context &ctx, unsigned expected_kind)
 {
 	next_token(ctx);
-	if (ctx->current_token.kind == expected_kind) {
-		ctx->stream = ctx->current_token.end;
+	if (ctx.current_token.kind == expected_kind) {
+		ctx.stream = ctx.current_token.end;
 		printf("Matched: ");
-		print_token(ctx->current_token);
+		print_token(ctx.current_token);
 		printf("\n");
 	}
-	return ctx->current_token.kind == expected_kind;
+	return ctx.current_token.kind == expected_kind;
 }
 
 bool expect_token(Context *ctx, unsigned expected_kind)
@@ -395,8 +384,8 @@ bool expect_token(Context *ctx, unsigned expected_kind)
 	}
 }
 
-#define assert_token(ctx, kind) assert(match_token(&ctx, kind));
-#define assert_token_int(ctx, value) assert(match_token(&ctx, TOKEN_INTEGER) && ctx.current_token.integer_val == value)
+#define assert_token(ctx, kind) assert(match_token(ctx, kind));
+#define assert_token_int(ctx, value) assert(match_token(ctx, TOKEN_INTEGER) && std::get<int>(ctx.current_token.val) == value)
 
 void test_tokenizer()
 {
