@@ -179,7 +179,7 @@ void print_token(const Token &token)
 	}
 }
 
-Token next_token(Context &ctx)
+Token next_token(LexCtx &ctx)
 {
 	// SSYM1 = [ab\d]; SSYM2 = c
 	// ASTERIX = SSYM1 ? ; SSYM1 + ; SSYM1 *
@@ -283,7 +283,7 @@ repeat:
 	return token;
 }
 
-void unexpected_token_error(Context &ctx)
+void unexpected_token_error(LexCtx &ctx)
 {
 	printf("<filename>:%d:%d: Unexpected token ", ctx.loc.line, ctx.loc.column);
 	print_token(ctx.current_token);
@@ -291,7 +291,7 @@ void unexpected_token_error(Context &ctx)
 	exit(1);
 }
 
-bool match_token(Context &ctx, unsigned expected_kind)
+bool match_token(LexCtx &ctx, unsigned expected_kind)
 {
 	next_token(ctx);
 	if (ctx.current_token.kind == expected_kind) {
@@ -303,7 +303,7 @@ bool match_token(Context &ctx, unsigned expected_kind)
 	return ctx.current_token.kind == expected_kind;
 }
 
-bool expect_token(Context &ctx, unsigned expected_kind)
+bool expect_token(LexCtx &ctx, unsigned expected_kind)
 {
 	if (match_token(ctx, expected_kind)) {
 		return true;

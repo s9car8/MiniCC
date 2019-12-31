@@ -65,12 +65,12 @@ typedef struct Location {
 	size_t line, column;
 } Location;
 
-typedef struct Context {
+typedef struct LexCtx {
 	const char *stream;
 	Token current_token;
 	Location loc;
 } Context;
 
-void unexpected_token_error(Context &ctx);
-bool match_token(Context &ctx, unsigned expected_kind);
-bool expect_token(Context &ctx, unsigned expected_kind);
+void unexpected_token_error(LexCtx &ctx);
+bool match_token(LexCtx &ctx, unsigned expected_kind);
+bool expect_token(LexCtx &ctx, unsigned expected_kind);

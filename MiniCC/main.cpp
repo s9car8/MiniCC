@@ -12,7 +12,7 @@
 void test_tokenizer()
 {
 	{
-		Context ctx = {"char float if else while return"};
+		LexCtx ctx = {"char float if else while return"};
 		//printf("Expected: %d; Got: %d\n", TOKEN_CHAR, next_token(&ctx).kind);
 		assert_token(ctx, TOKEN_CHAR);
 		assert_token(ctx, TOKEN_FLOAT);
@@ -23,7 +23,7 @@ void test_tokenizer()
 	}
 
 	{
-		Context ctx = {"123\t0b101\n0xAbCdEf"};
+		LexCtx ctx = {"123\t0b101\n0xAbCdEf"};
 		assert_token_int(ctx, 123);
 		assert_token_int(ctx, 5);
 		assert_token_int(ctx, 0xAbCdEf);
@@ -45,7 +45,7 @@ typedef struct TypeSpec {
 	enum TypeSpecKind kind;
 } TypeSpec;
 
-TypeSpec parse_type_spec(Context &lctx, ParseCtx &pctx)
+TypeSpec parse_type_spec(LexCtx &lctx, ParseCtx &pctx)
 {
 	if (match_token(lctx, TOKEN_INT)) {
 		return {TYPESPEC_INT};
@@ -67,7 +67,7 @@ typedef struct Param {
 	std::string name;
 } Param;
 
-auto parse_params(Context &lctx, ParseCtx &pctx)
+auto parse_params(LexCtx &lctx, ParseCtx &pctx)
 {
 	std::vector<Param> params;
 	TypeSpec type_spec;
@@ -115,9 +115,9 @@ struct Expr {
 	std::variant<int, float, char, std::string, Binary> data;
 };
 
-Expr parse_expr0(Context &lctx, ParseCtx &pctx);
+Expr parse_expr0(LexCtx &lctx, ParseCtx &pctx);
 
-Expr parse_expr2(Context &lctx, ParseCtx &pctx)
+Expr parse_expr2(LexCtx &lctx, ParseCtx &pctx)
 {
 	if (match_token(lctx, TOKEN_IDENTIFIER)) {
 		const auto &name = std::get<std::string>(lctx.current_token.val);
@@ -142,7 +142,7 @@ Expr parse_expr2(Context &lctx, ParseCtx &pctx)
 	}
 }
 
-Expr parse_expr1(Context &lctx, ParseCtx &pctx)
+Expr parse_expr1(LexCtx &lctx, ParseCtx &pctx)
 {
 	Expr expr2;
 
@@ -163,7 +163,7 @@ Expr parse_expr1(Context &lctx, ParseCtx &pctx)
 	}
 }
 
-Expr parse_expr0(Context &lctx, ParseCtx &pctx)
+Expr parse_expr0(LexCtx &lctx, ParseCtx &pctx)
 {
 	Expr expr1;
 
@@ -236,9 +236,9 @@ struct Decl {
 	std::variant<Func, Var> data;
 };
 
-Stmt parse_stmt(Context &lctx, ParseCtx &pctx);
+Stmt parse_stmt(LexCtx &lctx, ParseCtx &pctx);
 
-auto parse_stmts(Context &lctx, ParseCtx &pctx)
+auto parse_stmts(LexCtx &lctx, ParseCtx &pctx)
 {
 	std::vector<Stmt> stmts;
 
@@ -250,9 +250,9 @@ auto parse_stmts(Context &lctx, ParseCtx &pctx)
 	return M(stmts);
 }
 
-Decl parse_decl(Context &lctx, ParseCtx &pctx);
+Decl parse_decl(LexCtx &lctx, ParseCtx &pctx);
 
-Stmt parse_stmt(Context &lctx, ParseCtx &pctx)
+Stmt parse_stmt(LexCtx &lctx, ParseCtx &pctx)
 {
 	Decl decl;
 	Expr expr;
@@ -309,7 +309,7 @@ Stmt parse_stmt(Context &lctx, ParseCtx &pctx)
 	}
 }
 
-Decl parse_decl(Context &lctx, ParseCtx &pctx)
+Decl parse_decl(LexCtx &lctx, ParseCtx &pctx)
 {
 	TypeSpec type_spec;
 
@@ -352,7 +352,7 @@ typedef struct ParseCtx {
 void test_parser()
 {
 	{
-		Context lctx = {"int add(int a, int b) { return a + b; }"};
+		LexCtx lctx = {"int add(int a, int b) { return a + b; }"};
 		ParseCtx pctx = {};
 		auto decl = parse_decl(lctx, pctx);
 		printf("kind: %d\n", decl.kind);
