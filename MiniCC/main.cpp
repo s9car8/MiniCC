@@ -1,3 +1,4 @@
+#define  _CRT_SECURE_NO_WARNINGS
 #include <assert.h>
 #include <vector>
 #include <string>
@@ -494,5 +495,20 @@ int main()
 	test_tokenizer();
 	printf("\n");
 	test_parser();
+
+	FILE *f = fopen("test/test1.c", "r");
+	fseek(f, 0, SEEK_END);
+	size_t source_length = ftell(f);
+	char *buffer = (char*)malloc(source_length + 1);
+	fseek(f, 0, SEEK_SET);
+	source_length = fread(buffer, 1, source_length, f);
+	buffer[source_length] = '\0';
+
+
+	LexCtx lctx = {buffer, {"test/test1.c"}};
+	ParseCtx pctx = {};
+	while (parse_decl(lctx, pctx).kind != DECL_NONE);
+	//ModuleInfo module_info = build_module(lctx, pctx);
+
 	return 0;
 }
