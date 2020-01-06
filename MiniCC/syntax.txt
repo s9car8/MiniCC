@@ -40,7 +40,7 @@ decls = decl* ;
 decl = func_decl | var_decl ;
 
 func_decl = type_decl IDENTIFIER '(' params ')' '{' stmts '}' ;
-var_decl = type_decl IDENTIFIER ('=' expr0)? ';' ;
+var_decl = type_decl IDENTIFIER ('=' expr)? ';' ;
 
 type_decl = base_type ;
 base_type = CHAR | INT | FLOAT ;
@@ -50,27 +50,35 @@ params = (type_decl IDENTIFIER (',' type_decl IDENTIFIER)*)? ;
 stmts = stmt* ;
 
 stmt = decl
-     | IF '(' expr0 ')' stmt
-     | IF '(' expr0 ')' stmt ELSE stmt
-     | WHILE '(' expr0 ')' stmt
-     | RETURN expr0 ';'
-     | expr0 ';'
+     | IF '(' expr ')' stmt
+     | IF '(' expr ')' stmt ELSE stmt
+     | WHILE '(' expr ')' stmt
+     | RETURN expr ';'
+     | expr ';'
      | '{' stmts '}' ;
 
-expr0 = expr1 ('+' expr0)
-      | expr1 ('-' expr0)
-      | expr1 ;
-expr1 = expr2 ('*' expr1)
-      | expr2 ('/' expr1)
-      | expr2 ;
-expr2 = INTEGER | REAL | CHARACTER | STRING ;
+expr = logical_or_expr
+logical_or_expr = logical_and_expr (OR logical_and_expr)* ;
+logical_and_expr = cmp_eq_expr (AND cmp_eq_expr)* ;
+cmp_eq_expr = cmp_rel_expr ((EQ | NEQ) cmp_rel_expr)* ;
+cmp_rel_expr = add_expr (('<' | LEQ | '>' | GEQ) add_expr)* ;
+add_expr = mul_expr (('+' | '-') mul_expr)* ;
+mul_expr = base_expr (('*' | '/') base_expr)* ;
+base_expr = IDENTIFIER
+          | IDENTIFIER '(' args ')'
+          | INTEGER
+          | REAL
+          | CHARACTER
+          | '(' expr ')' ;
+
+args = (expr (',' expr)*)? ;
 
 Grammar transform to LL(1):
 decls_opt = decl decls_opt
           | --EPS-- ;
 decl = type_spec IDENTIFIER decl_tail
 decl_tail = '(' params_opt ')' '{' stmts '}'
-          | '=' expr0 ';'
+          | '=' expr ';'
           | ';' ;
 type_spec = CHAR | INT | FLOAT ;
 params_opt = params | --EPS-- ;
@@ -80,23 +88,44 @@ params_tail = ',' type_spec IDENTIFIER params_tail
 stmts = stmt stmts
       | --EPS-- ;
 stmt = decl
-     | expr0 ';'
-     | IF '(' expr0 ')' stmt else_tail
-     | WHILE '(' expr0 ')' stmt
-     | RETURN expr0 ';'
+     | expr ';'
+     | IF '(' expr ')' stmt else_tail
+     | WHILE '(' expr ')' stmt
+     | RETURN expr ';'
      | '{' stmts '}' ;
 else_tail = ELSE stmt
           | --EPS-- ;
-expr0 = expr1 expr0_tail
-expr0_tail = '+' expr0
-           | '-' expr0
-           | --EPS-- ;
-expr1 = expr2 expr1_tail
-expr1_tail = '*' expr1
-           | '/' expr1
-           | --EPS-- ;
-expr2 = IDENTIFIER
+expr = logical_or_expr
+logical_or_expr = logical_and_expr logical_or_expr_tail
+logical_or_expr_tail = OR logical_or_expr
+                     | --EPS-- ;
+logical_and_expr = cmp_eq_expr logical_and_expr_tail
+logical_and_expr_tail = AND logical_and_expr
+                      | --EPS-- ;
+cmp_eq_expr = cmp_rel_expr cmp_eq_expr_tail
+cmp_eq_expr_tail = EQ cmp_eq_expr
+                 | NEQ cmp_eq_expr
+                 | --EPS-- ;
+cmp_rel_expr = add_expr cmp_rel_expr_tail
+cmp_rel_expr_tail = '<' cmp_rel_expr
+                  | LEQ cmp_rel_expr
+                  | '>' cmp_rel_expr
+                  | GEQ cmp_rel_expr
+                  | --EPS-- ;
+add_expr = mul_expr add_expr_tail
+add_expr_tail = '+' add_expr
+              | '-' add_expr
+              | --EPS-- ;
+mul_expr = base_expr mul_expr_tail
+mul_expr_tail = '*' mul_expr
+              | '/' mul_expr
+              | --EPS-- ;
+base_expr = IDENTIFIER base_id_expr_tail
       | INTEGER
       | REAL
       | CHARACTER
       | '(' expr0 ')' ;
+base_id_expr_tail = --EPS-- | '(' args_opt ')' ;
+args_opt = args | --EPS-- ;
+args = expr0 ',' args
+     | expr0 ;

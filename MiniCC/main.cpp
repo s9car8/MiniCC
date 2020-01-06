@@ -67,7 +67,7 @@ typedef struct Param {
 	std::string name;
 } Param;
 
-auto parse_params(LexCtx &lctx, ParseCtx &pctx)
+std::vector<Param> parse_params(LexCtx &lctx, ParseCtx &pctx)
 {
 	std::vector<Param> params;
 	TypeSpec type_spec;
@@ -91,36 +91,74 @@ auto parse_params(LexCtx &lctx, ParseCtx &pctx)
 enum ExprKind {
 	EXPR_NONE,
 
-	// 0
+	// Base
 	EXPR_IDENTIFIER,
 	EXPR_INTEGER,
 	EXPR_REAL,
 	EXPR_CHARACTER,
+	EXPR_CALL,
 
-	// 1
+	// Mul
 	EXPR_MUL,
 	EXPR_DIV,
 
-	// 2
+	// Add
 	EXPR_ADD,
 	EXPR_SUB,
+
+	// Cmp relational
+	EXPR_LESS,
+	EXPR_LESS_EQUAL,
+	EXPR_GREAT,
+	EXPR_GREAT_EQUAL,
+
+	// Cmp equality
+	EXPR_EQUAL,
+	EXPR_NOT_EQUAL,
+
+	// Logical and
+	EXPR_LOGICAL_AND,
+
+	// Logical or
+	EXPR_LOGICAL_OR
 };
 
 struct Expr {
 	struct Binary {
 		std::unique_ptr<Expr> expr1, expr2;
 	};
+	struct Call {
+		std::string fname;
+		std::vector<Expr> args;
+	};
 
 	enum ExprKind kind;
-	std::variant<int, float, char, std::string, Binary> data;
+	std::variant<int, float, char, std::string, Binary, Call> data;
 };
 
-Expr parse_expr0(LexCtx &lctx, ParseCtx &pctx);
+Expr parse_expr(LexCtx &lctx, ParseCtx &pctx);
 
-Expr parse_expr2(LexCtx &lctx, ParseCtx &pctx)
+std::vector<Expr> parse_args(LexCtx &lctx, ParseCtx &pctx)
+{
+	std::vector<Expr> args;
+
+	do {
+		auto expr = parse_expr(lctx, pctx);
+		if (expr.kind == EXPR_NONE) break;
+		args.push_back(M(expr));
+	} while (match_token(lctx, ','));
+	return args;
+}
+
+Expr parse_base_expr(LexCtx &lctx, ParseCtx &pctx)
 {
 	if (match_token(lctx, TOKEN_IDENTIFIER)) {
 		const auto &name = std::get<std::string>(lctx.current_token.val);
+		if (match_token(lctx, '(')) {
+			auto args = parse_args(lctx, pctx);
+			expect_token(lctx, ')');
+			return {EXPR_CALL, Expr::Call{name, M(args)}};
+		}
 		return {EXPR_IDENTIFIER, name};
 	}
 	else if (match_token(lctx, TOKEN_INTEGER)) {
@@ -133,55 +171,144 @@ Expr parse_expr2(LexCtx &lctx, ParseCtx &pctx)
 		return {EXPR_CHARACTER, std::get<char>(lctx.current_token.val)};
 	}
 	else if (match_token(lctx, '(')) {
-		auto expr0 = parse_expr0(lctx, pctx);
+		auto expr = parse_expr(lctx, pctx);
 		expect_token(lctx, ')');
-		return expr0;
+		return expr;
 	}
 	else {
 		return {EXPR_NONE};
 	}
 }
 
-Expr parse_expr1(LexCtx &lctx, ParseCtx &pctx)
+Expr parse_mul_expr(LexCtx &lctx, ParseCtx &pctx)
 {
-	Expr expr2;
+	Expr expr;
 
-	if ((expr2 = parse_expr2(lctx, pctx)).kind == EXPR_NONE) {
+	if ((expr = parse_base_expr(lctx, pctx)).kind == EXPR_NONE) {
 		return {EXPR_NONE};
 	}
 
 	if (match_token(lctx, '*')) {
-		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr2)), std::make_unique<Expr>(parse_expr1(lctx, pctx))};
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_mul_expr(lctx, pctx))};
 		return {EXPR_MUL, M(binary)};
 	}
 	else if (match_token(lctx, '/')) {
-		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr2)), std::make_unique<Expr>(parse_expr1(lctx, pctx))};
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_mul_expr(lctx, pctx))};
 		return {EXPR_DIV, M(binary)};
 	}
 	else {
-		return expr2;
+		return expr;
 	}
 }
 
-Expr parse_expr0(LexCtx &lctx, ParseCtx &pctx)
+Expr parse_add_expr(LexCtx &lctx, ParseCtx &pctx)
 {
-	Expr expr1;
+	Expr expr;
 
-	if ((expr1 = parse_expr1(lctx, pctx)).kind == EXPR_NONE) {
+	if ((expr = parse_mul_expr(lctx, pctx)).kind == EXPR_NONE) {
 		return {EXPR_NONE};
 	}
 
 	if (match_token(lctx, '+')) {
-		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr1)), std::make_unique<Expr>(parse_expr0(lctx, pctx))};
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_add_expr(lctx, pctx))};
 		return {EXPR_ADD, M(binary)};
 	}
 	else if (match_token(lctx, '/')) {
-		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr1)), std::make_unique<Expr>(parse_expr0(lctx, pctx))};
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_add_expr(lctx, pctx))};
 		return {EXPR_SUB, M(binary)};
 	}
 	else {
-		return expr1;
+		return expr;
 	}
+}
+
+Expr parse_cmp_rel_expr(LexCtx &lctx, ParseCtx &pctx)
+{
+	Expr expr;
+
+	if ((expr = parse_add_expr(lctx, pctx)).kind == EXPR_NONE) {
+		return {EXPR_NONE};
+	}
+
+	if (match_token(lctx, '<')) {
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_cmp_rel_expr(lctx, pctx))};
+		return {EXPR_LESS, M(binary)};
+	}
+	else if (match_token(lctx, TOKEN_LEQ)) {
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_cmp_rel_expr(lctx, pctx))};
+		return {EXPR_LESS_EQUAL, M(binary)};
+	}
+	else if (match_token(lctx, '>')) {
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_cmp_rel_expr(lctx, pctx))};
+		return {EXPR_GREAT, M(binary)};
+	}
+	else if (match_token(lctx, TOKEN_GEQ)) {
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_cmp_rel_expr(lctx, pctx))};
+		return {EXPR_GREAT_EQUAL, M(binary)};
+	}
+	else {
+		return expr;
+	}
+}
+
+Expr parse_cmp_eq_expr(LexCtx &lctx, ParseCtx &pctx)
+{
+	Expr expr;
+
+	if ((expr = parse_cmp_rel_expr(lctx, pctx)).kind == EXPR_NONE) {
+		return {EXPR_NONE};
+	}
+
+	if (match_token(lctx, TOKEN_EQ)) {
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_cmp_eq_expr(lctx, pctx))};
+		return {EXPR_EQUAL, M(binary)};
+	}
+	else if (match_token(lctx, TOKEN_NEQ)) {
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_cmp_eq_expr(lctx, pctx))};
+		return {EXPR_NOT_EQUAL, M(binary)};
+	}
+	else {
+		return expr;
+	}
+}
+
+Expr parse_logical_and_expr(LexCtx &lctx, ParseCtx &pctx)
+{
+	Expr expr;
+
+	if ((expr = parse_cmp_eq_expr(lctx, pctx)).kind == EXPR_NONE) {
+		return {EXPR_NONE};
+	}
+
+	if (match_token(lctx, TOKEN_AND)) {
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_logical_and_expr(lctx, pctx))};
+		return {EXPR_LOGICAL_AND, M(binary)};
+	}
+	else {
+		return expr;
+	}
+}
+
+Expr parse_logical_or_expr(LexCtx &lctx, ParseCtx &pctx)
+{
+	Expr expr;
+
+	if ((expr = parse_logical_and_expr(lctx, pctx)).kind == EXPR_NONE) {
+		return {EXPR_NONE};
+	}
+
+	if (match_token(lctx, TOKEN_OR)) {
+		auto binary = Expr::Binary{std::make_unique<Expr>(M(expr)), std::make_unique<Expr>(parse_logical_or_expr(lctx, pctx))};
+		return {EXPR_LOGICAL_OR, M(binary)};
+	}
+	else {
+		return expr;
+	}
+}
+
+Expr parse_expr(LexCtx &lctx, ParseCtx &pctx)
+{
+	return parse_logical_or_expr(lctx, pctx);
 }
 
 enum StmtKind {
@@ -261,7 +388,7 @@ Stmt parse_stmt(LexCtx &lctx, ParseCtx &pctx)
 		assert(decl.kind == DECL_VAR);
 		return {STMT_DECL, std::make_unique<Decl>(M(decl))};
 	}
-	else if ((expr = parse_expr0(lctx, pctx)).kind != EXPR_NONE) {
+	else if ((expr = parse_expr(lctx, pctx)).kind != EXPR_NONE) {
 		expect_token(lctx, ';');
 
 		return {STMT_EXPR, std::make_unique<Expr>(M(expr))};
@@ -274,7 +401,7 @@ Stmt parse_stmt(LexCtx &lctx, ParseCtx &pctx)
 	}
 	else if (match_token(lctx, TOKEN_IF)) {
 		expect_token(lctx, '(');
-		auto cond = parse_expr0(lctx, pctx);
+		auto cond = parse_expr(lctx, pctx);
 		expect_token(lctx, ')');
 		auto then_stmt = parse_stmt(lctx, pctx);
 
@@ -291,7 +418,7 @@ Stmt parse_stmt(LexCtx &lctx, ParseCtx &pctx)
 	}
 	else if (match_token(lctx, TOKEN_WHILE)) {
 		expect_token(lctx, '(');
-		auto cond = parse_expr0(lctx, pctx);
+		auto cond = parse_expr(lctx, pctx);
 		expect_token(lctx, ')');
 		auto stmt = parse_stmt(lctx, pctx);
 
@@ -299,7 +426,7 @@ Stmt parse_stmt(LexCtx &lctx, ParseCtx &pctx)
 		return {STMT_WHILE, M(while_stmt)};
 	}
 	else if (match_token(lctx, TOKEN_RETURN)) {
-		auto expr = std::make_unique<Expr>(parse_expr0(lctx, pctx));
+		auto expr = std::make_unique<Expr>(parse_expr(lctx, pctx));
 		expect_token(lctx, ';');
 
 		return {STMT_RETURN, M(expr)};
@@ -327,7 +454,7 @@ Decl parse_decl(LexCtx &lctx, ParseCtx &pctx)
 			return {DECL_FUNC, name, Decl::Func{type_spec, params, M(body)}};
 		}
 		else if (match_token(lctx, '=')) {
-			auto expr = parse_expr0(lctx, pctx);
+			auto expr = parse_expr(lctx, pctx);
 			expect_token(lctx, ';');
 
 			return {DECL_VAR, name, Decl::Var{type_spec, std::move(expr)}};
@@ -346,7 +473,7 @@ Decl parse_decl(LexCtx &lctx, ParseCtx &pctx)
 }
 
 typedef struct ParseCtx {
-
+	// It should contain symbol table to be able make parser's decisions based on symbol's related information.
 } ParseCtx;
 
 void test_parser()
