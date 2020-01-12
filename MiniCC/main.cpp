@@ -2,6 +2,7 @@
 #include <assert.h>
 #include "lexer.h"
 #include "parse.h"
+#include "ir_code_gen.h"
 
 
 #define assert_token(ctx, kind) assert(match_token(ctx, kind));
@@ -62,8 +63,8 @@ int main()
 
 	LexCtx lctx = {buffer, {"test/test1.c"}};
 	ParseCtx pctx = {};
-	while (parse_decl(lctx, pctx).kind != DECL_NONE);
-	//ModuleInfo module_info = build_module(lctx, pctx);
+	auto module = build_module(lctx, pctx);
 
+	fclose(f);
 	return 0;
 }
