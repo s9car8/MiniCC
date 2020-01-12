@@ -70,6 +70,16 @@ struct Expr {
 	std::variant<int, float, char, std::string, Binary, Call> data;
 };
 
+enum StmtKind {
+	STMT_NONE,
+	STMT_DECL,
+	STMT_EXPR,
+	STMT_BLOCK,
+	STMT_IF,
+	STMT_WHILE,
+	STMT_RETURN,
+};
+
 typedef struct Decl Decl;
 
 struct Stmt {

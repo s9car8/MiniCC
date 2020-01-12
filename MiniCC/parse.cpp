@@ -218,16 +218,6 @@ Expr parse_expr(LexCtx &lctx, ParseCtx &pctx)
 	return parse_logical_or_expr(lctx, pctx);
 }
 
-enum StmtKind {
-	STMT_NONE,
-	STMT_DECL,
-	STMT_EXPR,
-	STMT_BLOCK,
-	STMT_IF,
-	STMT_WHILE,
-	STMT_RETURN,
-};
-
 Stmt parse_stmt(LexCtx &lctx, ParseCtx &pctx);
 
 auto parse_stmts(LexCtx &lctx, ParseCtx &pctx)
