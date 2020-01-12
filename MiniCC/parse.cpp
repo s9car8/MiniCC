@@ -60,7 +60,7 @@ std::vector<Expr> parse_args(LexCtx &lctx, ParseCtx &pctx)
 Expr parse_base_expr(LexCtx &lctx, ParseCtx &pctx)
 {
 	if (match_token(lctx, TOKEN_IDENTIFIER)) {
-		const auto &name = std::get<std::string>(lctx.current_token.val);
+		const auto name = std::get<std::string>(lctx.current_token.val);
 		if (match_token(lctx, '(')) {
 			auto args = parse_args(lctx, pctx);
 			expect_token(lctx, ')');
@@ -297,7 +297,7 @@ Decl parse_decl(LexCtx &lctx, ParseCtx &pctx)
 
 	if ((type_spec = parse_type_spec(lctx, pctx)).kind != TYPESPEC_NONE) {
 		expect_token(lctx, TOKEN_IDENTIFIER);
-		const auto &name = std::get<std::string>(lctx.current_token.val);
+		const auto name = std::get<std::string>(lctx.current_token.val);
 
 		if (match_token(lctx, '(')) {
 			auto params = parse_params(lctx, pctx);
