@@ -67,8 +67,8 @@ typedef struct Location {
 
 typedef struct LexCtx {
 	const char *stream;
-	Token current_token;
 	Location loc;
+	Token current_token;
 } Context;
 
 void unexpected_token_error(LexCtx &ctx);

@@ -285,7 +285,7 @@ repeat:
 
 void unexpected_token_error(LexCtx &ctx)
 {
-	printf("<filename>:%d:%d: Unexpected token ", ctx.loc.line, ctx.loc.column);
+	printf("%s:%d:%d: Unexpected token ", ctx.loc.filename, ctx.loc.line, ctx.loc.column);
 	print_token(ctx.current_token);
 	printf("\n");
 	exit(1);
@@ -309,7 +309,7 @@ bool expect_token(LexCtx &ctx, unsigned expected_kind)
 		return true;
 	}
 	else {
-		printf("Unexpected token: ");
+		printf("%s:%d:%d: Unexpected token ", ctx.loc.filename, ctx.loc.line, ctx.loc.column);
 		print_token(ctx.current_token);
 		printf("\n");
 		return false;
